@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Pingpong 测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #result, #connectionStatus { margin-top: 20px; }
+        #pingpongControls { display: none; }
+    </style>
+</head>
+<body>
+    <h1>WebRTC Pingpong 测试</h1>
+    <div>
+        <label for="role">选择角色：</label>
+        <select id="role">
+            <option value="none">未选择</option>
+            <option value="initiator">发起者</option>
+            <option value="receiver">接收者</option>
+        </select>
+    </div>
+    
+    <div id="connectionStatus"></div>
+
+    <div id="pingpongControls">
+        <button id="startPingpong">开始 Pingpong</button>
+        <button id="stopPingpong" style="display:none;">停止 Pingpong</button>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        const roleSelect = document.getElementById('role');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const pingpongControls = document.getElementById('pingpongControls');
+        const startPingpongButton = document.getElementById('startPingpong');
+        const stopPingpongButton = document.getElementById('stopPingpong');
+        const resultDiv = document.getElementById('result');
+
+        let peerConnection;
+        let dataChannel;
+        let pingpongInterval;
+        let isInitiator = false;
+        let iceCandidates = [];
+
+        const createPeerConnection = () => {
+            peerConnection = new RTCPeerConnection();
+            
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    console.log("新的ICE候选：", JSON.stringify(event.candidate));
+                    iceCandidates.push(event.candidate);
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log(`连接状态变更：${peerConnection.connectionState}`);
+                connectionStatus.textContent = `连接状态：${peerConnection.connectionState}`;
+                if (peerConnection.connectionState === 'connected') {
+                    pingpongControls.style.display = 'block';
+                } else {
+                    pingpongControls.style.display = 'none';
+                }
+            };
+
+            peerConnection.onicegatheringstatechange = () => {
+                console.log(`ICE收集状态：${peerConnection.iceGatheringState}`);
+            };
+
+            peerConnection.onsignalingstatechange = () => {
+                console.log(`信令状态：${peerConnection.signalingState}`);
+            };
+        };
+
+        const createDataChannel = () => {
+            dataChannel = peerConnection.createDataChannel("pingpongChannel");
+            setupDataChannel();
+        };
+
+        const setupDataChannel = () => {
+            dataChannel.onopen = () => console.log("数据通道已打开");
+            dataChannel.onclose = () => console.log("数据通道已关闭");
+            dataChannel.onmessage = handleMessage;
+        };
+
+        const handleMessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'ping') {
+                resultDiv.innerHTML += `收到 Ping ${message.id}<br>`;
+                dataChannel.send(JSON.stringify({ type: 'pong', id: message.id }));
+            } else if (message.type === 'pong') {
+                const latency = Date.now() - message.id;
+                resultDiv.innerHTML += `Pingpong ${message.id}: ${latency}ms<br>`;
+            }
+        };
+
+        const showModal = (title, content, inputRequired = false) => {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.innerHTML = `
+                    <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;">
+                        <div style="background:white;padding:20px;border-radius:5px;max-width:80%;">
+                            <h3>${title}</h3>
+                            ${inputRequired 
+                                ? `<textarea id="modalInput" style="width:100%;height:100px;margin-bottom:10px;"></textarea>`
+                                : `<textarea readonly style="width:100%;height:100px;margin-bottom:10px;">${content}</textarea>`
+                            }
+                            ${inputRequired ? '' : `<button id="copyContent">复制内容</button>`}
+                            <button id="closeModal">${inputRequired ? '确定' : '关闭'}</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                if (!inputRequired) {
+                    document.getElementById('copyContent').onclick = () => {
+                        navigator.clipboard.writeText(content).then(() => {
+                            alert('内容已复制到剪贴板');
+                        });
+                    };
+                }
+
+                document.getElementById('closeModal').onclick = () => {
+                    const input = inputRequired ? document.getElementById('modalInput').value : null;
+                    document.body.removeChild(modal);
+                    resolve(input);
+                };
+            });
+        };
+
+        roleSelect.addEventListener('change', async () => {
+            isInitiator = roleSelect.value === 'initiator';
+            createPeerConnection();
+
+            if (isInitiator) {
+                createDataChannel();
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer).catch(err => console.error("设置本地描述错误：", err));
+                
+                await showModal("Offer 信息", JSON.stringify(offer));
+
+                const answerInput = await showModal("输入 Answer", "", true);
+                const answer = JSON.parse(answerInput);
+                await peerConnection.setRemoteDescription(answer).catch(err => console.error("设置远程描述错误：", err));
+
+                const remoteCandidatesInput = await showModal("输入远程 ICE 候选", "", true);
+                const remoteCandidates = JSON.parse(remoteCandidatesInput);
+                for (const candidate of remoteCandidates) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+                        .catch(err => console.error("添加ICE候选错误：", err));
+                }
+            } else if (roleSelect.value === 'receiver') {
+                peerConnection.ondatachannel = (event) => {
+                    dataChannel = event.channel;
+                    setupDataChannel();
+                };
+                const offerInput = await showModal("输入 Offer", "", true);
+                const offer = JSON.parse(offerInput);
+                await peerConnection.setRemoteDescription(offer).catch(err => console.error("设置远程描述错误：", err));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer).catch(err => console.error("设置本地描述错误：", err));
+                await showModal("Answer 信息", JSON.stringify(answer));
+
+                // 等待一段时间，让ICE候选收集完成
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await showModal("本地 ICE 候选", JSON.stringify(iceCandidates));
+
+            }
+        });
+
+        startPingpongButton.addEventListener('click', () => {
+            startPingpongButton.style.display = 'none';
+            stopPingpongButton.style.display = 'inline';
+            resultDiv.innerHTML = '';
+            let pingId = 0;
+
+            pingpongInterval = setInterval(() => {
+                if (dataChannel && dataChannel.readyState === 'open') {
+                    dataChannel.send(JSON.stringify({ type: 'ping', id: Date.now() }));
+                    pingId++;
+                }
+            }, 1000);
+        });
+
+        stopPingpongButton.addEventListener('click', () => {
+            clearInterval(pingpongInterval);
+            startPingpongButton.style.display = 'inline';
+            stopPingpongButton.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
