@@ -36,14 +36,11 @@
     </div>
     
     <div id="connectionStatus"></div>
-
     <div id="pingpongControls">
         <button id="startPingpong">开始 Pingpong</button>
         <button id="stopPingpong" style="display:none;">停止 Pingpong</button>
     </div>
-
     <div id="result"></div>
-
     <div id="notification"></div>
 
     <script>
@@ -56,40 +53,20 @@
         const notificationDiv = document.getElementById('notification');
         const signalServerInput = document.getElementById('signalServer');
 
-        let peerConnection;
-        let dataChannel;
-        let pingpongInterval;
-        let isInitiator = false;
-        let iceCandidates = [];
-        let socket;
+        let peerConnection, dataChannel, pingpongInterval, isInitiator = false, socket;
 
         const createPeerConnection = () => {
             peerConnection = new RTCPeerConnection();
-            
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     console.log("新的ICE候选：", JSON.stringify(event.candidate));
-                    iceCandidates.push(event.candidate);
                     socket.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
                 }
             };
-
             peerConnection.onconnectionstatechange = () => {
                 console.log(`连接状态变更：${peerConnection.connectionState}`);
                 connectionStatus.textContent = `连接状态：${peerConnection.connectionState}`;
-                if (peerConnection.connectionState === 'connected') {
-                    pingpongControls.style.display = 'block';
-                } else {
-                    pingpongControls.style.display = 'none';
-                }
-            };
-
-            peerConnection.onicegatheringstatechange = () => {
-                console.log(`ICE收集状态：${peerConnection.iceGatheringState}`);
-            };
-
-            peerConnection.onsignalingstatechange = () => {
-                console.log(`信令状态：${peerConnection.signalingState}`);
+                pingpongControls.style.display = peerConnection.connectionState === 'connected' ? 'block' : 'none';
             };
         };
 
@@ -118,32 +95,24 @@
         const showNotification = (message) => {
             notificationDiv.textContent = message;
             notificationDiv.style.display = 'block';
-            setTimeout(() => {
-                notificationDiv.style.display = 'none';
-            }, 3000);
+            setTimeout(() => notificationDiv.style.display = 'none', 3000);
         };
 
         const connectToSignalServer = () => {
-            const signalServerUrl = signalServerInput.value;
-            socket = new WebSocket(signalServerUrl);
-
+            socket = new WebSocket(signalServerInput.value);
             socket.onopen = async () => {
                 console.log('已连接到信令服务器');
                 showNotification('已连接到信令服务器');
-
                 if (isInitiator) {
                     createDataChannel();
                     const offer = await peerConnection.createOffer();
-                    await peerConnection.setLocalDescription(offer).catch(err => console.error("设置本地描述错误：", err));
-                    console.log("发送offer：", JSON.stringify({ type: 'offer', offer: offer }));
+                    await peerConnection.setLocalDescription(offer);
                     socket.send(JSON.stringify({ type: 'offer', offer: offer }));
                 }
             };
-
             socket.onmessage = async (event) => {
                 console.log("收到消息：", event);
-                const messageText = await event.data.text();
-                const message = JSON.parse(messageText);
+                const message = JSON.parse(await event.data.text());
                 if (message.type === 'offer') {
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
                     const answer = await peerConnection.createAnswer();
@@ -155,23 +124,20 @@
                     await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
                 }
             };
-
             socket.onclose = () => {
                 console.log('与信令服务器的连接已关闭');
                 showNotification('与信令服务器的连接已关闭');
             };
-
             socket.onerror = (error) => {
                 console.error('信令服务器错误：', error);
                 showNotification('信令服务器错误');
             };
         };
 
-        roleSelect.addEventListener('change', async () => {
+        roleSelect.addEventListener('change', () => {
             isInitiator = roleSelect.value === 'initiator';
             createPeerConnection();
             connectToSignalServer();
-
             if (roleSelect.value === 'receiver') {
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
@@ -184,12 +150,9 @@
             startPingpongButton.style.display = 'none';
             stopPingpongButton.style.display = 'inline';
             resultDiv.innerHTML = '';
-            let pingId = 0;
-
             pingpongInterval = setInterval(() => {
                 if (dataChannel && dataChannel.readyState === 'open') {
                     dataChannel.send(JSON.stringify({ type: 'ping', id: Date.now() }));
-                    pingId++;
                 }
             }, 1000);
         });
