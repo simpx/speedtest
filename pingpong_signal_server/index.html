@@ -142,21 +142,18 @@
 
             socket.onmessage = async (event) => {
                 console.log("收到消息：", event);
-                const reader = new FileReader();
-                reader.onload = async () => {
-                    const message = JSON.parse(reader.result);
-                    if (message.type === 'offer') {
-                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
-                        const answer = await peerConnection.createAnswer();
-                        await peerConnection.setLocalDescription(answer);
-                        socket.send(JSON.stringify({ type: 'answer', answer: answer }));
-                    } else if (message.type === 'answer') {
-                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
-                    } else if (message.type === 'ice-candidate') {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
-                    }
-                };
-                reader.readAsText(event.data);
+                const messageText = await event.data.text();
+                const message = JSON.parse(messageText);
+                if (message.type === 'offer') {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    socket.send(JSON.stringify({ type: 'answer', answer: answer }));
+                } else if (message.type === 'answer') {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+                } else if (message.type === 'ice-candidate') {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                }
             };
 
             socket.onclose = () => {
