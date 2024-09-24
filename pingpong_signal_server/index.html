@@ -23,6 +23,10 @@
 <body>
     <h1>WebRTC Pingpong 测试</h1>
     <div>
+        <label for="signalServer">信令服务器：</label>
+        <input type="text" id="signalServer" value="ws://127.0.0.1:3000">
+    </div>
+    <div>
         <label for="role">选择角色：</label>
         <select id="role">
             <option value="none">未选择</option>
@@ -50,12 +54,14 @@
         const stopPingpongButton = document.getElementById('stopPingpong');
         const resultDiv = document.getElementById('result');
         const notificationDiv = document.getElementById('notification');
+        const signalServerInput = document.getElementById('signalServer');
 
         let peerConnection;
         let dataChannel;
         let pingpongInterval;
         let isInitiator = false;
         let iceCandidates = [];
+        let socket;
 
         const createPeerConnection = () => {
             peerConnection = new RTCPeerConnection();
@@ -64,6 +70,7 @@
                 if (event.candidate) {
                     console.log("新的ICE候选：", JSON.stringify(event.candidate));
                     iceCandidates.push(event.candidate);
+                    socket.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
                 }
             };
 
@@ -108,40 +115,6 @@
             }
         };
 
-        const showModal = (title, content, inputRequired = false) => {
-            return new Promise((resolve) => {
-                const modal = document.createElement('div');
-                modal.innerHTML = `
-                    <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;">
-                        <div style="background:white;padding:20px;border-radius:5px;max-width:80%;">
-                            <h3>${title}</h3>
-                            ${inputRequired 
-                                ? `<textarea id="modalInput" style="width:100%;height:100px;margin-bottom:10px;"></textarea>`
-                                : `<textarea readonly style="width:100%;height:100px;margin-bottom:10px;">${content}</textarea>`
-                            }
-                            ${inputRequired ? '' : `<button id="copyContent">复制内容</button>`}
-                            <button id="closeModal">${inputRequired ? '确定' : '关闭'}</button>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-
-                if (!inputRequired) {
-                    document.getElementById('copyContent').onclick = () => {
-                        navigator.clipboard.writeText(content).then(() => {
-                            showNotification('内容已复制到剪贴板');
-                        });
-                    };
-                }
-
-                document.getElementById('closeModal').onclick = () => {
-                    const input = inputRequired ? document.getElementById('modalInput').value : null;
-                    document.body.removeChild(modal);
-                    resolve(input);
-                };
-            });
-        };
-
         const showNotification = (message) => {
             notificationDiv.textContent = message;
             notificationDiv.style.display = 'block';
@@ -150,43 +123,55 @@
             }, 3000);
         };
 
+        const connectToSignalServer = () => {
+            const signalServerUrl = signalServerInput.value;
+            socket = new WebSocket(signalServerUrl);
+
+            socket.onopen = () => {
+                console.log('已连接到信令服务器');
+                showNotification('已连接到信令服务器');
+            };
+
+            socket.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                if (message.type === 'offer') {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    socket.send(JSON.stringify({ type: 'answer', answer: answer }));
+                } else if (message.type === 'answer') {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+                } else if (message.type === 'ice-candidate') {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                }
+            };
+
+            socket.onclose = () => {
+                console.log('与信令服务器的连接已关闭');
+                showNotification('与信令服务器的连接已关闭');
+            };
+
+            socket.onerror = (error) => {
+                console.error('信令服务器错误：', error);
+                showNotification('信令服务器错误');
+            };
+        };
+
         roleSelect.addEventListener('change', async () => {
             isInitiator = roleSelect.value === 'initiator';
             createPeerConnection();
+            connectToSignalServer();
 
             if (isInitiator) {
                 createDataChannel();
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer).catch(err => console.error("设置本地描述错误：", err));
-                
-                await showModal("Offer 信息", JSON.stringify(offer));
-
-                const answerInput = await showModal("输入 Answer", "", true);
-                const answer = JSON.parse(answerInput);
-                await peerConnection.setRemoteDescription(answer).catch(err => console.error("设置远程描述错误：", err));
-
-                const remoteCandidatesInput = await showModal("输入远程 ICE 候选", "", true);
-                const remoteCandidates = JSON.parse(remoteCandidatesInput);
-                for (const candidate of remoteCandidates) {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-                        .catch(err => console.error("添加ICE候选错误：", err));
-                }
+                socket.send(JSON.stringify({ type: 'offer', offer: offer }));
             } else if (roleSelect.value === 'receiver') {
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
                     setupDataChannel();
                 };
-                const offerInput = await showModal("输入 Offer", "", true);
-                const offer = JSON.parse(offerInput);
-                await peerConnection.setRemoteDescription(offer).catch(err => console.error("设置远程描述错误：", err));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer).catch(err => console.error("设置本地描述错误：", err));
-                await showModal("Answer 信息", JSON.stringify(answer));
-
-                // 等待一段时间，让ICE候选收集完成
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                await showModal("本地 ICE 候选", JSON.stringify(iceCandidates));
-
             }
         });
 
