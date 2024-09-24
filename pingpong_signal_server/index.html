@@ -127,23 +127,36 @@
             const signalServerUrl = signalServerInput.value;
             socket = new WebSocket(signalServerUrl);
 
-            socket.onopen = () => {
+            socket.onopen = async () => {
                 console.log('已连接到信令服务器');
                 showNotification('已连接到信令服务器');
+
+                if (isInitiator) {
+                    createDataChannel();
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer).catch(err => console.error("设置本地描述错误：", err));
+                    console.log("发送offer：", JSON.stringify({ type: 'offer', offer: offer }));
+                    socket.send(JSON.stringify({ type: 'offer', offer: offer }));
+                }
             };
 
             socket.onmessage = async (event) => {
-                const message = JSON.parse(event.data);
-                if (message.type === 'offer') {
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
-                    const answer = await peerConnection.createAnswer();
-                    await peerConnection.setLocalDescription(answer);
-                    socket.send(JSON.stringify({ type: 'answer', answer: answer }));
-                } else if (message.type === 'answer') {
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
-                } else if (message.type === 'ice-candidate') {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
-                }
+                console.log("收到消息：", event);
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const message = JSON.parse(reader.result);
+                    if (message.type === 'offer') {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        socket.send(JSON.stringify({ type: 'answer', answer: answer }));
+                    } else if (message.type === 'answer') {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+                    } else if (message.type === 'ice-candidate') {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                    }
+                };
+                reader.readAsText(event.data);
             };
 
             socket.onclose = () => {
@@ -162,12 +175,7 @@
             createPeerConnection();
             connectToSignalServer();
 
-            if (isInitiator) {
-                createDataChannel();
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer).catch(err => console.error("设置本地描述错误：", err));
-                socket.send(JSON.stringify({ type: 'offer', offer: offer }));
-            } else if (roleSelect.value === 'receiver') {
+            if (roleSelect.value === 'receiver') {
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
                     setupDataChannel();
