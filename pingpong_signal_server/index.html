@@ -54,6 +54,8 @@
         const signalServerInput = document.getElementById('signalServer');
 
         let peerConnection, dataChannel, pingpongInterval, isInitiator = false, socket;
+        let sentPingCount = 0;
+        let receivedPongCount = 0;
 
         const createPeerConnection = () => {
             peerConnection = new RTCPeerConnection();
@@ -89,6 +91,7 @@
             } else if (message.type === 'pong') {
                 const latency = Date.now() - message.id;
                 resultDiv.innerHTML += `Pingpong ${message.id}: ${latency}ms<br>`;
+                receivedPongCount++;
             }
         };
 
@@ -150,9 +153,12 @@
             startPingpongButton.style.display = 'none';
             stopPingpongButton.style.display = 'inline';
             resultDiv.innerHTML = '';
+            sentPingCount = 0;
+            receivedPongCount = 0;
             pingpongInterval = setInterval(() => {
                 if (dataChannel && dataChannel.readyState === 'open') {
                     dataChannel.send(JSON.stringify({ type: 'ping', id: Date.now() }));
+                    sentPingCount++;
                 }
             }, 1000);
         });
@@ -161,6 +167,23 @@
             clearInterval(pingpongInterval);
             startPingpongButton.style.display = 'inline';
             stopPingpongButton.style.display = 'none';
+
+            // 添加总结逻辑
+            if (isInitiator) {
+                const pings = resultDiv.innerHTML.match(/Pingpong \d+: \d+ms/g);
+                if (pings) {
+                    const latencies = pings.map(ping => parseInt(ping.split(': ')[1].replace('ms', '')));
+                    const total = latencies.reduce((acc, latency) => acc + latency, 0);
+                    const average = total / latencies.length;
+                    const max = Math.max(...latencies);
+                    const min = Math.min(...latencies);
+                    const packetLossRate = ((sentPingCount - receivedPongCount) / sentPingCount) * 100;
+
+                    resultDiv.innerHTML += `<br>--- Pingpong 统计 ---<br>`;
+                    resultDiv.innerHTML += `总数: ${latencies.length}, 平均: ${average.toFixed(2)}ms, 最小: ${min}ms, 最大: ${max}ms<br>`;
+                    resultDiv.innerHTML += `丢包率: ${packetLossRate.toFixed(2)}%<br>`;
+                }
+            }
         });
     </script>
 </body>
