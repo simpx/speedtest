@@ -8,6 +8,16 @@
         body { font-family: Arial, sans-serif; padding: 20px; }
         #result, #connectionStatus { margin-top: 20px; }
         #pingpongControls { display: none; }
+        #notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #4caf50;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -30,6 +40,8 @@
 
     <div id="result"></div>
 
+    <div id="notification"></div>
+
     <script>
         const roleSelect = document.getElementById('role');
         const connectionStatus = document.getElementById('connectionStatus');
@@ -37,6 +49,7 @@
         const startPingpongButton = document.getElementById('startPingpong');
         const stopPingpongButton = document.getElementById('stopPingpong');
         const resultDiv = document.getElementById('result');
+        const notificationDiv = document.getElementById('notification');
 
         let peerConnection;
         let dataChannel;
@@ -116,7 +129,7 @@
                 if (!inputRequired) {
                     document.getElementById('copyContent').onclick = () => {
                         navigator.clipboard.writeText(content).then(() => {
-                            alert('内容已复制到剪贴板');
+                            showNotification('内容已复制到剪贴板');
                         });
                     };
                 }
@@ -127,6 +140,14 @@
                     resolve(input);
                 };
             });
+        };
+
+        const showNotification = (message) => {
+            notificationDiv.textContent = message;
+            notificationDiv.style.display = 'block';
+            setTimeout(() => {
+                notificationDiv.style.display = 'none';
+            }, 3000);
         };
 
         roleSelect.addEventListener('change', async () => {
