@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speedtest</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #logArea {
+            width: 80%;
+            height: 500px; /* 增加高度 */
+            resize: none;
+            background-color: #f8f8f8;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-family: monospace; 
+            overflow-y: auto;
+        }
+        div.progress {
+            margin: 0 0 1em 0;
+        }
+        div.progress div.label {
+            display: inline-block;
+            font-weight: 400;
+            width: 12em;
+        }
+        .test-section {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background-color: #f8f8f8;
+            width: 80%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Speedtest</h1>
+    <div class="test-section">
+        <label for="signalServer">Signal Server：</label>
+        <input type="text" id="signalServer" value="ws://127.0.0.1:3000">
+        <button id="connectButton">Connect</button>
+        <button id="disconnectButton" disabled>Disconnect</button>
+    </div>
+    <div class="test-section">
+        <label>Ping Test:</label>
+        <input type="number" id="intervalToPing" min="100" step="100" value="1000"/>
+        <label for="intervalToPing">ms (ping interval ms)</label>
+        <button id="startPingButton" disabled>Start</button>
+        <button id="stopPingButton" disabled>Stop</button>
+    </div>
+    <div class="test-section">
+        <label>Bandwidth Test:</label>
+        <input type="number" id="mbToSend" min="8" step="8" value="32"/>
+        <label for="mbToSend">MB</label>
+        <button id="startBandwidthButton" disabled>Start</button>
+        <button id="stopBandwidthButton" disabled>Stop</button>
+        <label>Progress:</label>
+        <progress id="bandwidthProgress" max="0" value="0"></progress>
+    </div>
+    <div>
+        <button id="clearButton">Clear Log</button><br>
+        <textarea id="logArea" disabled readonly></textarea>
+    </div>
+<script src="js/main.js" async></script>
+</body>
+</html>
