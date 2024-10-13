@@ -62,6 +62,18 @@
         <button id="clearButton">Clear Log</button><br>
         <textarea id="logArea" disabled readonly></textarea>
     </div>
-<script src="js/main.js" async></script>
+    <script>
+        // 在页面加载时设置默认的 Signal Server URL
+        window.onload = function() {
+            const currentUrl = new URL(window.location.href);
+            const wsProtocol = currentUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+            const signalServer = `${wsProtocol}//${currentUrl.host}/ws`;
+            console.log('Signal Server 设置为:', signalServer);
+            
+            // 更新输入框的值
+            document.getElementById('signalServer').value = signalServer;
+        }
+    </script>
+    <script src="js/main.js" async></script>
 </body>
 </html>
