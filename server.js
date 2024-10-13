@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 
 const app = express();
 const port = process.env.PORT || 8000;
+const host = process.env.HOST || '0.0.0.0';
 
 // 静态文件服务
 app.use(express.static(path.join(__dirname, 'public')));
@@ -39,6 +40,6 @@ wss.on('connection', (ws) => {
 });
 
 // 启动服务器
-server.listen(port, '0.0.0.0', () => {
-    console.log(`Server running at http://localhost:${port}`);
+server.listen(port, host, () => {
+    console.log(`Server running at http://${host}:${port}`);
 });
