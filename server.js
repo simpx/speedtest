@@ -7,7 +7,7 @@ const app = express();
 const port = process.env.PORT || 8000;
 
 // 静态文件服务
-app.use(express.static(path.join(__dirname, '..')));
+app.use(express.static(path.join(__dirname, '.')));
 
 // 创建 HTTP 服务器
 const server = http.createServer(app);
