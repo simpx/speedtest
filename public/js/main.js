@@ -40,9 +40,6 @@ clearButton.addEventListener('click', () => {
 connectButton.onclick = connectSignalServer;
 disconnectButton.onclick = clearAll;
 
-let makingOffer = false;
-let ignoreOffer = false;
-
 async function connectSignalServer() {
     const url = signalServer.value;
     socket = new WebSocket(url);
@@ -64,7 +61,7 @@ async function connectSignalServer() {
         }
         customLog("[signal server] recv: ", message);
         if (message.type === 'server') {
-            if (message.clientCount === 1 || message.clientCount === 2) {
+            if (message.clientCount <= 2) {
                 customLog(`客户端数量: ${message.clientCount}，开始创建对等连接`);
                 createPeerConnection();
                 connectButton.textContent = '等待对等连接';
@@ -75,50 +72,40 @@ async function connectSignalServer() {
                 dataChannel = peerConnection.createDataChannel('ordered', { ordered: true });
                 unorderedDataChannel = peerConnection.createDataChannel('unordered', { ordered: false, maxRetransmits: 0 });
                 setupDataChannel();
-
-                peerConnection.onnegotiationneeded = async () => {
-                    try {
-                        customLog('触发协商需求，开始创建offer');
-                        makingOffer = true;
-                        await peerConnection.setLocalDescription();
-                        customLog('本地描述设置完成，发送offer');
-                        socket.send(JSON.stringify({ type: 'offer', offer: peerConnection.localDescription }));
-                    } catch (err) {
-                        customLog('创建offer过程中出错:', err);
-                    } finally {
-                        makingOffer = false;
-                    }
-                };
-
-                peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        customLog('发现新的ICE候选，发送给对方');
-                        socket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
-                    }
-                };
             } else {
                 customLog("[signal server] something wrong: ", message);
                 socket.close()
             }
-        } else if (message.type === 'offer') {
-            customLog('收到offer');
-            const offerCollision = makingOffer || peerConnection.signalingState !== 'stable';
+        } else if (message.type === 'offer' || message.type === 'answer') {
+            customLog('收到: ', message.type);
+            if (message.type === 'offer' && peerConnection.remoteDescription) {
+                if (message.offer.sdp === peerConnection.remoteDescription.sdp) {
+                    customLog('收到重传offer，忽略');
+                    return;
+                }
+            }
+            const offerCollision = message.type === 'offer' && (makingOffer || peerConnection.signalingState !== 'stable');
+
             ignoreOffer = offerCollision && message.offer.sdp < peerConnection.localDescription.sdp;
             
             if (ignoreOffer) {
-                customLog('检测到offer冲突，忽略接收到的offer');
+                customLog('忽略offer（本地SDP更大）');
+                socket.send(JSON.stringify({ type: 'offer', offer: peerConnection.localDescription }));
+                customLog('重试本地offer');
                 return;
             }
 
-            customLog('设置远程描述（offer）');
-            await peerConnection.setRemoteDescription(message.offer);
-            customLog('创建并设置本地描述（answer）');
-            await peerConnection.setLocalDescription();
-            customLog('发送answer');
-            socket.send(JSON.stringify({ type: 'answer', answer: peerConnection.localDescription }));
-        } else if (message.type === 'answer') {
-            customLog('收到answer，设置远程描述');
-            await peerConnection.setRemoteDescription(message.answer);
+            if (message.type === 'offer') {
+                await peerConnection.setRemoteDescription(message.offer);
+            } else {
+                await peerConnection.setRemoteDescription(message.answer);
+            }
+
+            if (message.type === 'offer') {
+                await peerConnection.setLocalDescription();
+                customLog('自动创建并设置本地描述: ', peerConnection.localDescription.type);
+                socket.send(JSON.stringify({ type: 'answer', answer: peerConnection.localDescription }));
+            }
         } else if (message.type === 'candidate') {
             customLog('收到新的ICE候选');
             try {
@@ -132,8 +119,6 @@ async function connectSignalServer() {
                     customLog('忽略offer状态下，跳过ICE候选添加错误');
                 }
             }
-        } else if (message.type === 'ice-candidate') {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
         }
     }
 }
@@ -165,17 +150,37 @@ function clearAll() {
     stopPingButton.disabled = false;
 }
 
+let makingOffer = false;
+let ignoreOffer = false;
+
 // peerconnection
 function createPeerConnection() {
     peerConnection = new RTCPeerConnection();
-    let conn = peerConnection;
-    peerConnection.onconnectionstatechange = () => {
-        // TODO 为什么close()不能导致这里的状态变化？
-        console.log("Connection state changed to: ", conn.connectionState);
+    let pc = peerConnection;
+    pc.onconnectionstatechange = () => {
+        console.log("Connection state changed to: ", pc.connectionState);
     };
-
-    peerConnection.oniceconnectionstatechange = () => {
-        console.log("ICE connection state changed to: ", conn.iceConnectionState);
+    pc.oniceconnectionstatechange = () => {
+        console.log("ICE connection state changed to: ", pc.iceConnectionState);
+    };
+    pc.onnegotiationneeded = async () => {
+        try {
+            customLog('触发协商需求，开始创建offer');
+            makingOffer = true;
+            await pc.setLocalDescription();
+            customLog('本地描述设置完成，发送offer');
+            socket.send(JSON.stringify({ type: 'offer', offer: pc.localDescription }));
+        } catch (err) {
+            customLog('创建offer过程中出错:', err);
+        } finally {
+            makingOffer = false;
+        }
+    };
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            customLog('发现新的ICE候选，发送给对方');
+            socket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+        }
     };
 };
 
