@@ -89,10 +89,13 @@ async function connectSignalServer() {
             ignoreOffer = offerCollision && message.offer.sdp < peerConnection.localDescription.sdp;
             
             if (ignoreOffer) {
-                customLog('忽略offer（本地SDP更大）');
+                customLog('offer冲突：忽略offer（本地SDP更大）');
                 socket.send(JSON.stringify({ type: 'offer', offer: peerConnection.localDescription }));
                 customLog('重试本地offer');
                 return;
+            }
+            if (offerCollision) {
+                customLog('offer冲突：采取offer（本地SDP更小）');
             }
 
             if (message.type === 'offer') {
