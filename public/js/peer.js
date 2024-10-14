@@ -58,6 +58,10 @@ class Peer {
                 return;
             }
 
+            if (offerCollision) {
+                console.log('offer冲突：不忽略offer');
+            }
+
             await pc.setRemoteDescription(description);
             if (description.type === 'offer') {
                 await pc.setLocalDescription();
