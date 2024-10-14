@@ -2,6 +2,7 @@
 
 let socket;
 let peerConnection;
+let peer;
 let dataChannel; // ordered
 let unorderedDataChannel;
 
@@ -63,7 +64,11 @@ async function connectSignalServer() {
         if (message.type === 'server') {
             if (message.clientCount <= 2) {
                 customLog(`客户端数量: ${message.clientCount}，开始创建对等连接`);
-                createPeerConnection();
+                peer = new Peer((msg) => {
+                    socket.send(JSON.stringify(msg));
+                });
+                await peer.createPeerConnection();
+                peerConnection = peer.peerConnection;
                 connectButton.textContent = '等待对等连接';
                 connectButton.disabled = true;
                 disconnectButton.disabled = false;
@@ -76,60 +81,21 @@ async function connectSignalServer() {
                 customLog("[signal server] something wrong: ", message);
                 socket.close()
             }
-        } else if (message.type === 'offer' || message.type === 'answer') {
-            customLog('收到: ', message.type);
-            if (message.type === 'offer' && peerConnection.remoteDescription) {
-                if (message.offer.sdp === peerConnection.remoteDescription.sdp) {
-                    customLog('收到重传offer，忽略');
-                    return;
-                }
-            }
-            const offerCollision = message.type === 'offer' && (makingOffer || peerConnection.signalingState !== 'stable');
-
-            ignoreOffer = offerCollision && message.offer.sdp < peerConnection.localDescription.sdp;
-            
-            if (ignoreOffer) {
-                customLog('offer冲突：忽略offer（本地SDP更大）');
-                socket.send(JSON.stringify({ type: 'offer', offer: peerConnection.localDescription }));
-                customLog('重试本地offer');
-                return;
-            }
-            if (offerCollision) {
-                customLog('offer冲突：采取offer（本地SDP更小）');
-            }
-
-            if (message.type === 'offer') {
-                await peerConnection.setRemoteDescription(message.offer);
-            } else {
-                await peerConnection.setRemoteDescription(message.answer);
-            }
-
-            if (message.type === 'offer') {
-                await peerConnection.setLocalDescription();
-                customLog('自动创建并设置本地描述: ', peerConnection.localDescription.type);
-                socket.send(JSON.stringify({ type: 'answer', answer: peerConnection.localDescription }));
-            }
-        } else if (message.type === 'candidate') {
-            customLog('收到新的ICE候选');
-            try {
-                await peerConnection.addIceCandidate(message.candidate);
-                customLog('成功添加ICE候选');
-            } catch (err) {
-                if (!ignoreOffer) {
-                    customLog('添加ICE候选失败:', err);
-                    throw err;
-                } else {
-                    customLog('忽略offer状态下，跳过ICE候选添加错误');
-                }
+        } else  {
+            const { description, candidate } = message;
+            if (description) {
+                await peer.handleDescription(description);
+            } else if (candidate) {
+                await peer.handleCandidate(candidate);
             }
         }
     }
 }
 
 function clearAll() {
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
+    if (peer) {
+        peer.close();
+        peer = null;
         console.log('close peerConnection.');
     }
     if (dataChannel) {
@@ -157,36 +123,6 @@ let makingOffer = false;
 let ignoreOffer = false;
 
 // peerconnection
-function createPeerConnection() {
-    peerConnection = new RTCPeerConnection();
-    let pc = peerConnection;
-    pc.onconnectionstatechange = () => {
-        console.log("Connection state changed to: ", pc.connectionState);
-    };
-    pc.oniceconnectionstatechange = () => {
-        console.log("ICE connection state changed to: ", pc.iceConnectionState);
-    };
-    pc.onnegotiationneeded = async () => {
-        try {
-            customLog('触发协商需求，开始创建offer');
-            makingOffer = true;
-            await pc.setLocalDescription();
-            customLog('本地描述设置完成，发送offer');
-            socket.send(JSON.stringify({ type: 'offer', offer: pc.localDescription }));
-        } catch (err) {
-            customLog('创建offer过程中出错:', err);
-        } finally {
-            makingOffer = false;
-        }
-    };
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            customLog('发现新的ICE候选，发送给对方');
-            socket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
-        }
-    };
-};
-
 function setupDataChannel() {
     if (dataChannel) {
         dataChannel.onopen = () => {
