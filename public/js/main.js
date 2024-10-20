@@ -74,8 +74,8 @@ async function connectSignalServer() {
                 disconnectButton.disabled = false;
 
                 customLog('创建数据通道');
-                dataChannel = peerConnection.createDataChannel('ordered', { ordered: true });
-                unorderedDataChannel = peerConnection.createDataChannel('unordered', { ordered: false, maxRetransmits: 0 });
+                dataChannel = peerConnection.createDataChannel('ordered', { ordered: true, negotiated: true, id: 1 });
+                unorderedDataChannel = peerConnection.createDataChannel('unordered', { ordered: false, maxRetransmits: 0, negotiated: true, id: 2 });
                 setupDataChannel();
             } else {
                 customLog("[signal server] something wrong: ", message);
