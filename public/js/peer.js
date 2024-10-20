@@ -8,6 +8,9 @@ class Peer {
         this.makingOffer = false;
         this.ignoreOffer = false;
         this.retryOffer = retryOffer;
+        this.impolite = null;
+        this.connectionState = null;
+        this.onconnectionstatechange = null;
     }
 
     async createPeerConnection() {
@@ -15,6 +18,21 @@ class Peer {
         let pc = this.peerConnection;
         pc.onconnectionstatechange = () => {
             console.log("Connection state changed to: ", pc.connectionState);
+            this.connectionState = pc.connectionState;
+            if (pc.connectionState === 'connected') {
+                if (pc.localDescription.type === 'offer') {
+                    this.impolite = true;
+                } else {
+                    this.impolite = false;
+                }
+            } else if (pc.connectionState === 'disconnected') {
+                this.impolite = null;
+            } else if (pc.connectionState === 'closed') {
+                this.impolite = null;
+            }
+            if (this.onconnectionstatechange) {
+                this.onconnectionstatechange();
+            }
         };
 
         pc.oniceconnectionstatechange = () => {
